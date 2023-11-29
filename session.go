@@ -613,8 +613,8 @@ func Connect(ctx context.Context, opts ...ConnectOption) (Session, error) {
 		UpdateUnsupportedError:  cfg.remoteUpdateErr,
 	}
 
-	reconnect := func(sess tunnel_client.Session) error {
-		resp, err := sess.Auth(auth)
+	reconnect := func(sess tunnel_client.Session, two bool) error {
+		resp, err := sess.Auth(auth, two)
 		if err != nil {
 			remote := false
 			if resp.Error != "" {

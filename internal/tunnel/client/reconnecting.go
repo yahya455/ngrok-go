@@ -100,11 +100,12 @@ type reconnectingSession struct {
 	clientID     string
 	cb           ReconnectCallback
 	swapper      *swapRaw
+	swapper2     *swapRaw
 	*session
 }
 
 type RawSessionDialer func() (RawSession, error)
-type ReconnectCallback func(s Session) error
+type ReconnectCallback func(s Session, two bool) error
 
 // Establish a Session that reconnects across temporary network failures. The
 // returned Session object uses the given dialer to reconnect whenever Accept
@@ -124,14 +125,17 @@ type ReconnectCallback func(s Session) error
 // ReconnectingSession will hang.
 func NewReconnectingSession(logger log.Logger, dialer RawSessionDialer, stateChanges chan<- error, cb ReconnectCallback) Session {
 	swapper := new(swapRaw)
+	swapper2 := new(swapRaw)
 	s := &reconnectingSession{
 		dialer:       dialer,
 		stateChanges: stateChanges,
 		cb:           cb,
 		swapper:      swapper,
+		swapper2:     swapper2,
 		session: &session{
 			tunnels: make(map[string]*tunnel),
 			raw:     swapper,
+			raw2:    swapper2,
 			Logger:  newLogger(logger),
 		},
 	}
@@ -142,7 +146,7 @@ func NewReconnectingSession(logger log.Logger, dialer RawSessionDialer, stateCha
 		if err != nil {
 			return
 		}
-		s.receive()
+		s.receive(false)
 	}()
 
 	return s
@@ -153,19 +157,25 @@ func (s *reconnectingSession) Close() error {
 	return s.session.Close()
 }
 
-func (s *reconnectingSession) receive() {
+func (s *reconnectingSession) receive(two bool) {
 	// when we shut down, close all of the open tunnels
-	defer func() {
-		s.RLock()
-		for _, t := range s.tunnels {
-			go t.Close()
-		}
-		s.RUnlock()
-	}()
+	if !two {
+		defer func() {
+			s.RLock()
+			for _, t := range s.tunnels {
+				go t.Close()
+			}
+			s.RUnlock()
+		}()
+	}
 
 	for {
 		// accept the next proxy connection
-		proxy, err := s.raw.Accept()
+		raw := s.raw
+		if two {
+			raw = s.raw2
+		}
+		proxy, err := raw.Accept()
 		if err == nil {
 			go s.handleProxy(proxy)
 			continue
@@ -181,8 +191,13 @@ func (s *reconnectingSession) receive() {
 	}
 }
 
-func (s *reconnectingSession) Auth(extra proto.AuthExtra) (resp proto.AuthResp, err error) {
-	resp, err = s.raw.Auth(s.clientID, extra)
+func (s *reconnectingSession) Auth(extra proto.AuthExtra, two bool) (resp proto.AuthResp, err error) {
+	raw := s.raw
+	if two {
+		raw = s.raw2
+		extra.Metadata = "muleg:leg1"
+	}
+	resp, err = raw.Auth(s.clientID, extra)
 	if err != nil {
 		return
 	}
@@ -294,7 +309,7 @@ func (s *reconnectingSession) connect(acceptErr error) error {
 		s.swapper.set(raw)
 
 		// callback for authentication
-		if err := s.cb(s); err != nil {
+		if err := s.cb(s, false); err != nil {
 			failTemp(err, raw)
 			continue
 		}
@@ -305,6 +320,37 @@ func (s *reconnectingSession) connect(acceptErr error) error {
 			failTemp(err, raw)
 			continue
 		}
+
+		/////////////////// 2 ///////////////////
+		// 2: dial the tunnel server
+
+		go func() {
+			for {
+				time.Sleep(5000 * time.Millisecond)
+				s.Info("connect2")
+
+				raw2, err := s.dialer()
+				if err != nil {
+					failTemp(err, raw2)
+					continue
+				}
+
+				// 2: successfully reconnected
+				s.swapper2.set(raw2)
+
+				// 2: callback for authentication
+				if err := s.cb(s, true); err != nil {
+					failTemp(err, raw2)
+					continue
+				}
+				s.Info("connect2 receive")
+				s.receive(true)
+				s.Info("connect2 done")
+				return
+			}
+		}()
+
+		/////////////////// end 2 ///////////////////
 
 		// reset wait
 		boff.Reset()
