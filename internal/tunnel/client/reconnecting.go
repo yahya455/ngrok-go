@@ -216,8 +216,14 @@ func (s *reconnectingSession) connect(acceptErr error) error {
 		Factor: 2,
 		Jitter: false,
 	}
+	boff2 := &backoff.Backoff{
+		Min:    500 * time.Millisecond,
+		Max:    30 * time.Second,
+		Factor: 2,
+		Jitter: false,
+	}
 
-	failTemp := func(err error, raw RawSession) {
+	failTemp := func(err error, raw RawSession, two bool) {
 		s.Error("failed to reconnect session", "err", err)
 		s.stateChanges <- err
 
@@ -227,7 +233,12 @@ func (s *reconnectingSession) connect(acceptErr error) error {
 		}
 
 		// session failed, wait before reconnecting
-		wait := boff.Duration()
+		var wait time.Duration
+		if two {
+			wait = boff2.Duration()
+		} else {
+			wait = boff.Duration()
+		}
 		s.Debug("sleep before reconnect", "secs", int(wait.Seconds()))
 		time.Sleep(wait)
 	}
@@ -301,7 +312,7 @@ func (s *reconnectingSession) connect(acceptErr error) error {
 		// dial the tunnel server
 		raw, err := s.dialer()
 		if err != nil {
-			failTemp(err, raw)
+			failTemp(err, raw, false)
 			continue
 		}
 
@@ -310,14 +321,14 @@ func (s *reconnectingSession) connect(acceptErr error) error {
 
 		// callback for authentication
 		if err := s.cb(s, false); err != nil {
-			failTemp(err, raw)
+			failTemp(err, raw, false)
 			continue
 		}
 
 		// re-establish binds
 		err = restartBinds(raw)
 		if err != nil {
-			failTemp(err, raw)
+			failTemp(err, raw, false)
 			continue
 		}
 
@@ -331,7 +342,7 @@ func (s *reconnectingSession) connect(acceptErr error) error {
 
 				raw2, err := s.dialer()
 				if err != nil {
-					failTemp(err, raw2)
+					failTemp(err, raw2, true)
 					continue
 				}
 
@@ -340,9 +351,18 @@ func (s *reconnectingSession) connect(acceptErr error) error {
 
 				// 2: callback for authentication
 				if err := s.cb(s, true); err != nil {
-					failTemp(err, raw2)
+					failTemp(err, raw2, true)
 					continue
 				}
+
+				s.Info("connect2 restartBinds")
+				// re-establish binds
+				err = restartBinds(raw2)
+				if err != nil {
+					failTemp(err, raw2, true)
+					continue
+				}
+
 				s.Info("connect2 receive")
 				s.receive(true)
 				s.Info("connect2 done")
