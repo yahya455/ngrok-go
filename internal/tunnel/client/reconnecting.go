@@ -193,9 +193,11 @@ func (s *reconnectingSession) receive(two bool) {
 
 func (s *reconnectingSession) Auth(extra proto.AuthExtra, two bool) (resp proto.AuthResp, err error) {
 	raw := s.raw
+	extra.Metadata = "muleg:leg0"
 	if two {
 		raw = s.raw2
 		extra.Metadata = "muleg:leg1"
+		extra.LegNumber = 1
 	}
 	resp, err = raw.Auth(s.clientID, extra)
 	if err != nil {
