@@ -139,7 +139,7 @@ type AuthExtra struct {
 	// The leg number of the client connection associated with this session.
 	// Defaults to zero, will be 1 or more for the additional connected
 	// leg(s) when multi-leg is engaged.
-	LegNumber int64
+	LegNumber uint32
 }
 
 type ClientType string

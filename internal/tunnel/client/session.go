@@ -80,7 +80,8 @@ type session struct {
 	raw2 RawSession
 	sync.RWMutex
 	log.Logger
-	tunnels map[string]*tunnel
+	tunnels  map[string]*tunnel
+	tunnels2 map[string]*tunnel
 }
 
 // NewSession starts a new go-tunnel client session running over the given
