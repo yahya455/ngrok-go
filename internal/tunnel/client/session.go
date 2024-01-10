@@ -30,7 +30,7 @@ import (
 type Session interface {
 	// Auth begins a session with the remote server. You *must* call this before
 	// calling any of the Listen functions.
-	Auth(extra proto.AuthExtra, two bool) (proto.AuthResp, error)
+	Auth(extra proto.AuthExtra) (proto.AuthResp, error)
 
 	// Listen negotiates with the server to create a new remote listen for the
 	// given protocol and options. It returns a *Tunnel on success from which
@@ -76,12 +76,12 @@ type Session interface {
 }
 
 type session struct {
-	raw  RawSession
-	raw2 RawSession
+	swapper *swapRaw
+	raw     RawSession
 	sync.RWMutex
 	log.Logger
-	tunnels  map[string]*tunnel
-	tunnels2 map[string]*tunnel
+	tunnels   map[string]*tunnel
+	legNumber int
 }
 
 // NewSession starts a new go-tunnel client session running over the given
@@ -98,11 +98,8 @@ func NewSession(logger log.Logger, mux muxado.Session, heartbeatConfig *muxado.H
 	return s
 }
 
-func (s *session) Auth(extra proto.AuthExtra, two bool) (resp proto.AuthResp, err error) {
+func (s *session) Auth(extra proto.AuthExtra) (resp proto.AuthResp, err error) {
 	raw := s.raw
-	if two {
-		raw = s.raw2
-	}
 	resp, err = raw.Auth("", extra)
 	if err != nil {
 		return
