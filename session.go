@@ -143,6 +143,8 @@ type connectConfig struct {
 	// The address of the ngrok server to connect to.
 	// Defaults to `connect.ngrok-agent.com:443`
 	ServerAddr string
+	// The optional address of the second ngrok server to connect to.
+	SecondServerAddr string
 	// The [tls.Config] used when connecting to the ngrok server
 	TLSConfigCustomizer func(*tls.Config)
 	// The [x509.CertPool] used to authenticate the ngrok server certificate.
@@ -547,24 +549,22 @@ func Connect(ctx context.Context, opts ...ConnectOption) (Session, error) {
 	}
 
 	rawDialer := func(two bool) (tunnel_client.RawSession, error) {
+		serverAddr := cfg.ServerAddr
 		if two {
-			cfg.ServerAddr = "connect.l2.ngrok-agent.com.lan:443"
-		} else {
-			cfg.ServerAddr = "connect.us.ngrok-agent.com.lan:443"
+			serverAddr = cfg.SecondServerAddr
 		}
 		tlsConfig := &tls.Config{
 			RootCAs:    cfg.CAPool,
-			ServerName: strings.Split(cfg.ServerAddr, ":")[0],
+			ServerName: strings.Split(serverAddr, ":")[0],
 			MinVersion: tls.VersionTLS12,
 		}
 		if cfg.TLSConfigCustomizer != nil {
 			cfg.TLSConfigCustomizer(tlsConfig)
 		}
-		tlsConfig.ServerName = strings.Split(cfg.ServerAddr, ":")[0]
 
-		conn, err := dialer.DialContext(ctx, "tcp", cfg.ServerAddr)
+		conn, err := dialer.DialContext(ctx, "tcp", serverAddr)
 		if err != nil {
-			return nil, errSessionDial{cfg.ServerAddr, err}
+			return nil, errSessionDial{serverAddr, err}
 		}
 
 		conn = tls.Client(conn, tlsConfig)
@@ -676,6 +676,9 @@ func Connect(ctx context.Context, opts ...ConnectOption) (Session, error) {
 		}
 
 		auth.Cookie = resp.Extra.Cookie
+		if len(resp.Extra.ConnectAddresses) > 0 {
+			cfg.SecondServerAddr = resp.Extra.ConnectAddresses[0].ServerAddr
+		}
 		return nil
 	}
 

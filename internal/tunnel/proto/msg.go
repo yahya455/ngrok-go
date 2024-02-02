@@ -189,7 +189,7 @@ func (avd *AgentVersionDeprecated) Error() string {
 	return "Your agent is deprecated. Please update " + to + when
 }
 
-type ConnectOption struct {
+type ConnectAddress struct {
 	Region     string
 	ServerAddr string
 }
@@ -205,7 +205,7 @@ type AuthRespExtra struct {
 	PlanName           string
 	Banner             string
 	DeprecationWarning *AgentVersionDeprecated
-	ConnectOptions     []ConnectOption
+	ConnectAddresses   []ConnectAddress
 }
 
 // A client sends this message to the server over a new stream
